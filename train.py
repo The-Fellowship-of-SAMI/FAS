@@ -35,7 +35,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     device = args.device if torch.cuda.is_available() else 'cpu'
-    model = map_input_to_model[args.model] 
+    # model = map_input_to_model[args.model] 
+    model = args.model
     sampler = None
     shuffle = True
     run = None
