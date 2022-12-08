@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from torch.utils.data import DataLoader, WeightedRandomSampler
-from model.utils import CFASDDataset, CSDataset, ZaloDataset, CFASD_ZaloDataset
+from model.utils import CFASDDataset, CSDataset, ZaloDataset, CFASD_ZaloDataset, NUAADataset, StandardDataset
 from torchvision import transforms
 from train_model import pl_train
 from model.C_CDN import C_CDN, DC_CDN
@@ -12,7 +12,8 @@ import neptune.new as neptune
 from tqdm import tqdm
 
 transform = transforms.Compose([ transforms.RandomRotation(.15), transforms.RandomHorizontalFlip()])
-map_data_to_dataset ={'sample': CSDataset, 'train_img': CFASDDataset, 'test_img': CFASDDataset, 'zalo_data': ZaloDataset}
+# trans.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1)
+map_data_to_dataset ={'sample': CSDataset, 'train_img': CFASDDataset, 'test_img': CFASDDataset, 'zalo_data': ZaloDataset, 'NUAA': NUAADataset}
 map_input_to_model = {'C_CDN': C_CDN, 'DC_CDN': DC_CDN, 'CDCN': CDCN}
 map_equalize_to_bool = {'true': True, 't': True, 'yes': True, 'y': True}
 
