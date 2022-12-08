@@ -58,6 +58,7 @@ if __name__ == '__main__':
                 train_dataset = dataset(args.train_data, transform= transform)
 
     if  map_equalize_to_bool.get(str(args.equalize_data).lower(), False):
+        print("Trying to calculate training data class distribution...")
         n_class = {}
         cls_weight = {}
         ds_weight = []
@@ -68,8 +69,8 @@ if __name__ == '__main__':
                 n_class[str(train_dataset[i][2])] = 0
         for i in n_class:
             cls_weight[i] = 1/(n_class[i]+1)
-
-        ds_weight = [cls_weight[str(train_dataset[i][2])] for i in range(len(train_dataset)) ]
+        print("Weighting the samples...")
+        ds_weight = [cls_weight[str(train_dataset[i][2])] for i in tqdm(range(len(train_dataset))) ]
         sampler = WeightedRandomSampler(ds_weight,len(train_dataset))
         shuffle = False
 
@@ -80,6 +81,7 @@ if __name__ == '__main__':
         test_dataset = CFASDDataset(args.val_data, mode = 'val', transform= None)
         
         if map_equalize_to_bool.get(str(args.equalize_data).lower(), False):
+            print("Trying to calculate validation data class distribution...")
             n_class = {}
             cls_weight = {}
             ds_weight = []
@@ -90,8 +92,8 @@ if __name__ == '__main__':
                     n_class[str(test_dataset[i][2])] = 0
             for i in n_class:
                 cls_weight[i] = 1/(n_class[i]+1)
-
-            ds_weight = [cls_weight[str(test_dataset[i][2])] for i in range(len(test_dataset)) ]
+            print("Weighting the samples...")print("Weighting the samples...")
+            ds_weight = [cls_weight[str(test_dataset[i][2])] for i in tqdm(range(len(test_dataset))) ]
             val_sampler = WeightedRandomSampler(ds_weight,len(test_dataset))
         
         val_loader = DataLoader(test_dataset, sampler= val_sampler, batch_size= args.val_batch_size, shuffle= False)
