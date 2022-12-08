@@ -93,7 +93,7 @@ if __name__ == '__main__':
                     n_class[str(test_dataset[i][2])] = 0
             for i in n_class:
                 cls_weight[i] = 1/(n_class[i]+1)
-            print("Weighting the samples...")print("Weighting the samples...")
+            print("Weighting the samples...")
             ds_weight = [cls_weight[str(test_dataset[i][2])] for i in tqdm(range(len(test_dataset))) ]
             val_sampler = WeightedRandomSampler(ds_weight,len(test_dataset))
         
