@@ -35,20 +35,21 @@ class pl_train(pl.LightningModule):
         self.BCE_loss = nn.BCELoss().to(self.device)
         self.run = runs
         self.ckpt = ckpt_out
-        # self.device_t = device
-        # self.theta = torch.nn.Parameter(torch.zeros([3,1]),requires_grad= True if train != 'none' else False).to(self.device)
 
         self.sigmoid = torch.sigmoid
-        
+        self.cls_train = 1
+        self.depth_train = 1
         if train == 'all':
             for param in self.parameters():
                 param.requires_grad = True
         elif train == 'classifier':
             for param in self.net.parameters():
                 param.requires_grad = False
+                self.depth_train = 0
         elif train == 'depth':
             for param in self.cls.parameters():
                 param.requires_grad = False
+                self.cls_train = 0
         elif train == 'none':
             for param in self.parameters():
                 param.requires_grad = False
@@ -56,16 +57,15 @@ class pl_train(pl.LightningModule):
         
     def forward(self, x):
         
-        map_x = self.net(x)
+        map_x, *feat = self.net(x)
         score_x = self.cls(map_x)
-        return map_x, score_x
+        return map_x, score_x, feat
     
     def training_step(self, batch, batch_idx):
         inputs, map_label, spoof_label = batch[0].float().to(self.device), batch[1].float().to(self.device), batch[2].float().view(-1,1).to(self.device)
-        map_x, score_x =  self(inputs)
-        # loss = self.sigmoid(self.theta[0])*self.MSE_loss(map_label,map_x) + self.sigmoid(self.theta[1])*self.contrastive_loss(map_label,map_x) + self.sigmoid(self.theta[2])*self.BCE_loss(score_x, spoof_label)
-        loss = self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) + 0*self.BCE_loss(score_x, spoof_label)
-        loss = loss.mean()
+        map_x, score_x, *_ =  self(inputs)
+        loss = self.depth_train*(self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) ) + self.cls_train*self.BCE_loss(score_x, spoof_label)
+        # loss = loss.mean()
         # self.score = torch.cat([self.score, loss], dim = 1)
         # self.label = torch.cat([self.label, spoof_label], dim = 1)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
@@ -89,10 +89,9 @@ class pl_train(pl.LightningModule):
     
     def validation_step(self, batch, batch_idx):
         inputs, map_label, spoof_label = batch[0].float().to(self.device), batch[1].float().to(self.device), batch[2].float().view(-1,1).to(self.device)
-        map_x, score_x =  self(inputs)
-        # loss = self.sigmoid(self.theta[0])*self.MSE_loss(map_label,map_x) + self.sigmoid(self.theta[1])*self.contrastive_loss(map_label,map_x) + self.sigmoid(self.theta[2])*self.BCE_loss(score_x, spoof_label)
-        loss = self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) + 0*self.BCE_loss(score_x, spoof_label)
-        loss = loss.mean()
+        map_x, score_x, *_ =  self(inputs)
+        loss = self.depth_train*(self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) ) + self.cls_train*self.BCE_loss(score_x, spoof_label)
+        # loss = loss.mean()
         # self.score = torch.cat([self.score, loss], dim = 1)
         # self.label = torch.cat([self.label, spoof_label], dim = 1)
         self.log("val_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)

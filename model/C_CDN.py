@@ -171,7 +171,7 @@ class C_CDN(nn.Module):
         
         depth = x.squeeze(1)
         
-        return depth
+        return depth, x_concat
 
 
 
@@ -362,6 +362,7 @@ class DC_CDN(nn.Module):
         
         x_concat = torch.cat((x_Block1_32x32,x_Block2_32x32,x_Block3_32x32), dim=1)    # x [128*3, 32, 32]  
         
+        concat_x = x_concat
         x = self.lastconv1(x_concat)    # x [128, 32, 32] 
         depth1 = self.lastconv2(x)    # x [64, 32, 32] 
         #x = self.lastconv3(x)    # x [1, 32, 32] 
@@ -376,6 +377,7 @@ class DC_CDN(nn.Module):
         
         x_concat = torch.cat((x_Block1_32x32,x_Block2_32x32,x_Block3_32x32), dim=1)    # x [128*3, 32, 32]  
         
+        concat_x = (concat_x + x_concat)/2
         x = self.lastconv1_2(x_concat)    # x [128, 32, 32] 
         depth2 = self.lastconv2_2(x)    # x [64, 32, 32] 
         
@@ -387,4 +389,4 @@ class DC_CDN(nn.Module):
         depth = depth.squeeze(1)
         
         
-        return depth
+        return depth, concat_x

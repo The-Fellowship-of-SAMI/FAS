@@ -145,4 +145,4 @@ class CDCN(nn.Module):
         
         map_x = x.squeeze(1)
         
-        return map_x#, x_concat, x_Block1, x_Block2, x_Block3, x_input
+        return map_x, x_concat#, x_Block1, x_Block2, x_Block3, x_input
