@@ -1,8 +1,6 @@
 import numpy as np
 import torch 
-from torchvision import transforms
 import torch.nn as nn
-from torch.utils.data  import Dataset, DataLoader
 import torch.optim as optim
 from model.utils import Contrast_depth_loss
 from model.C_CDN import C_CDN, DC_CDN
@@ -17,12 +15,12 @@ class pl_train(pl.LightningModule):
     def __init__(self, model : C_CDN, runs = None, ckpt_out = None, train ="all", **kwarg):
         super().__init__()
         assert train in ['all','depth','classifier','none'], "Training mode not supported, please select in the list ['all','depth','classifier','none']"
-        if kwarg['lr'] is not None:
+        if 'lr' in kwarg.keys():
             self.lr = kwarg['lr']
         else:
             self.lr = .0001
         
-        if kwarg['wd'] is not None:
+        if 'wd' in kwarg.keys():
             self.wd = kwarg['wd']
         else:
             self.wd = .00005
@@ -57,20 +55,16 @@ class pl_train(pl.LightningModule):
             
         
     def forward(self, x):
+        
         map_x = self.net(x)
         score_x = self.cls(map_x)
         return map_x, score_x
-
-    # def on_train_epoch_start(self) -> None:
-    #     self.score = torch.Tensor().to(self.device)
-    #     self.label = torch.Tensor().to(self.device)
-    #     return 
     
     def training_step(self, batch, batch_idx):
         inputs, map_label, spoof_label = batch[0].float().to(self.device), batch[1].float().to(self.device), batch[2].float().view(-1,1).to(self.device)
         map_x, score_x =  self(inputs)
         # loss = self.sigmoid(self.theta[0])*self.MSE_loss(map_label,map_x) + self.sigmoid(self.theta[1])*self.contrastive_loss(map_label,map_x) + self.sigmoid(self.theta[2])*self.BCE_loss(score_x, spoof_label)
-        loss = self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) + self.BCE_loss(score_x, spoof_label)
+        loss = self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) + 0*self.BCE_loss(score_x, spoof_label)
         loss = loss.mean()
         # self.score = torch.cat([self.score, loss], dim = 1)
         # self.label = torch.cat([self.label, spoof_label], dim = 1)
@@ -92,17 +86,12 @@ class pl_train(pl.LightningModule):
     
     def configure_optimizers(self):
         return optim.Adam(self.parameters(), lr= self.lr, weight_decay = self.wd)
-
-    # def on_validation_epoch_start(self) -> None:
-    #     self.score = torch.Tensor().to(self.device)
-    #     self.label = torch.Tensor().to(self.device)
-    #     return 
     
     def validation_step(self, batch, batch_idx):
         inputs, map_label, spoof_label = batch[0].float().to(self.device), batch[1].float().to(self.device), batch[2].float().view(-1,1).to(self.device)
         map_x, score_x =  self(inputs)
         # loss = self.sigmoid(self.theta[0])*self.MSE_loss(map_label,map_x) + self.sigmoid(self.theta[1])*self.contrastive_loss(map_label,map_x) + self.sigmoid(self.theta[2])*self.BCE_loss(score_x, spoof_label)
-        loss = self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) + self.BCE_loss(score_x, spoof_label)
+        loss = self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) + 0*self.BCE_loss(score_x, spoof_label)
         loss = loss.mean()
         # self.score = torch.cat([self.score, loss], dim = 1)
         # self.label = torch.cat([self.label, spoof_label], dim = 1)

@@ -36,14 +36,18 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     device = args.device if torch.cuda.is_available() else 'cpu'
-    # model = map_input_to_model[args.model] 
-    model = args.model
+    try: 
+        model = args.model
+        model()
+    except:
+        model = map_input_to_model[args.model]
     sampler = None
     shuffle = True
     run = None
 
     # print(args.train_data)
-    if isinstance(args.train_data, list):
+    train_dataset = None
+    if isinstance(args.train_data, list) and len(args.train_data)>1:
         data_path =''
         for path in args.train_data:
             for key in map_data_to_dataset.keys():
@@ -53,10 +57,18 @@ if __name__ == '__main__':
         if data_path == 'train_img+zalo_data+' or data_path == 'zalo_data+train_img+':
             train_dataset = CFASD_ZaloDataset('./data/processed/train_img', './data/processed/zalo_data', transform= transform)
     else:
+        try:
+            train_path = args.train_data[0]
+        except:
+            train_path = args.train_data
         for key in map_data_to_dataset.keys():
-            if key in args.train_data:
+            
+            if key in train_path:
+                print(key)
                 dataset = map_data_to_dataset[key]
-                train_dataset = dataset(args.train_data, transform= transform)
+                train_dataset = dataset(train_path, transform= transform)
+
+    assert train_dataset is not None, "Please provide valid path to dataset or check the Dataset again."
 
     if  map_equalize_to_bool.get(str(args.equalize_data).lower(), False):
         print("Trying to calculate training data class distribution...")
@@ -79,7 +91,7 @@ if __name__ == '__main__':
 
     if args.val_data is not None:
         val_sampler = None
-        test_dataset = CFASDDataset(args.val_data, mode = 'val', transform= None)
+        test_dataset = StandardDataset(args.val_data, mode = 'val', transform= None)
         
         if map_equalize_to_bool.get(str(args.equalize_data).lower(), False):
             print("Trying to calculate validation data class distribution...")
@@ -115,7 +127,8 @@ if __name__ == '__main__':
     
 
 
-    train_model = pl_train(model = model(),runs = run,ckpt_out= args.checkpoint_out, lr = args.lr, wd = args.wd).to(device)
+    train_model = pl_train(model = model(),runs = run,ckpt_out= args.checkpoint_out, lr = args.lr, wd = args.wd, train= 'depth').to(device)
+    train_model.cls.load_state_dict(torch.load('checkpoints/checkpoint_cls.pth'))
     trainer = pl.Trainer(devices=1, accelerator="gpu",accumulate_grad_batches=1, max_epochs = args.max_epochs)
     if args.val_data is not None:
         trainer.fit(train_model, train_loader, val_loader)

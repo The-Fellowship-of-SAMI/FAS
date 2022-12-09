@@ -26,7 +26,8 @@ def contrast_depth_conv(input, device = 'cuda'):
     kernel_filter = torch.from_numpy(kernel_filter.astype(np.float)).float().to(device)
     # weights (in_channel, out_channel, kernel, kernel)
     kernel_filter = kernel_filter.unsqueeze(dim=1)
-    
+
+
     input = input.unsqueeze(dim=1).expand(input.shape[0], 8, input.shape[1],input.shape[2])
     
     contrast_depth = F.conv2d(input, weight=kernel_filter, groups=8)  # depthwise conv
@@ -250,36 +251,48 @@ class CFASD_ZaloDataset(Dataset):
             f.writelines(self.root_dir2 + f' /{filename}'+'\n')
         
 class NUAADataset(Dataset):
-  def __init__(self, root_dir='./data/processed/NUAA/train',  transform=None):
-      self.root_dir = root_dir
-      self.transform = transform
-      self.preprocess()
-
-  def __len__(self):
-      with open(f'./NUAAImfile.txt','r+') as f:
-        len_ds = len(f.readlines())
-      return len_ds-1
-
-  def __getitem__(self,idx):
+  def __init__(self, root_dir='./data/processed/NUAA/train',  transform=None,preload = True, **kwarg):
+    self.root_dir = root_dir
+    self.transform = transform
+    self.preprocess()
+    if preload:
       with open(f'./NUAAImfile.txt','r+') as f:
         lines = f.readlines()
+        self.lines = [path.strip().split(" ") for path in lines]
+    else:
+      self.lines = None
 
+  def __len__(self):
+    if self.lines is not None:
+      return len(self.lines)
+
+    with open(f'./NUAAImfile.txt','r+') as f:
+      len_ds = len(f.readlines())
+    return len_ds-1
+
+  def __getitem__(self,idx):
+    if self.lines is not None:
+      dir, filename = self.lines[idx][0], self.lines[idx][1]
+    else:
+      with open(f'./NUAAImfile.txt','r+') as f:
+        lines = f.readlines()
       dir, filename = lines[idx].strip().split(" ")
-      # print(dir+'/color'+filename)
-      
-      rgb_im = torch.Tensor(cv2.resize(cv2.imread(dir+'/color'+filename)[:,:,::-1], (256, 256))).permute(2,0,1)/255
-      depth_im = torch.Tensor(cv2.imread(dir+'/depth'+filename,0)).unsqueeze(-1).permute(2,0,1)/255
+    # print(dir+'/color'+filename)
+    
+    rgb_im = torch.Tensor(cv2.resize(cv2.imread(dir+'/color'+filename)[:,:,::-1], (256, 256))).permute(2,0,1)/255
+    depth_im = torch.Tensor(cv2.resize(cv2.imread(dir+'/depth'+filename,0), (256, 256), interpolation= cv2.INTER_CUBIC)).unsqueeze(-1).permute(2,0,1)/255
 
-      label = 0 if 'fake' in dir+filename else 1
-
-      sample = torch.cat((rgb_im, depth_im),dim= 0)
-
-      if self.transform is not None:
-        sample = self.transform(sample)
-        # sample[:3] = transforms.ColorJitter(brightness=.2)(sample[:3])
-        sample[:3] = transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1)(sample[:3])
-      return (sample[:3],torch.Tensor(cv2.resize(sample[3].numpy(),(32,32))) , label , dir+filename)
   
+    label = 0 if 'fake' in dir+filename else 1
+
+    sample = torch.cat((rgb_im, depth_im),dim= 0)
+
+    if self.transform is not None:
+      sample = self.transform(sample)
+      # sample[:3] = transforms.ColorJitter(brightness=.2)(sample[:3])
+      sample[:3] = transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1)(sample[:3])
+    return (sample[:3],torch.Tensor(cv2.resize(sample[3].numpy(),(32,32))) , label , dir+filename)
+
   def preprocess(self):
       with open(f'./NUAAImfile.txt','w+') as f:
       # self.data = {'color':[] , 'depth':[]}
@@ -288,7 +301,7 @@ class NUAADataset(Dataset):
           f.writelines(self.root_dir + f' /{filename}'+'\n')
 
 class StandardDataset(Dataset):
-  def __init__(self, root_dir='',  transform=None, preload = True):
+  def __init__(self, root_dir='',  transform=None, preload = True, **kwarg):
     self.root_dir = root_dir
     self.transform = transform
     self.preprocess()
@@ -303,7 +316,7 @@ class StandardDataset(Dataset):
   def __len__(self):
     if self.lines is not None:
       return len(self.lines)
-      
+
     with open(f'./{self.root_dir.upper()}Imfile.txt','r+') as f:
       len_ds = len(f.readlines())
     return len_ds-1
@@ -319,7 +332,7 @@ class StandardDataset(Dataset):
     
     
     rgb_im = torch.Tensor(cv2.resize(cv2.imread(dir+'/color'+filename)[:,:,::-1], (256, 256))).permute(2,0,1)/255
-    depth_im = torch.Tensor(cv2.imread(dir+'/depth'+filename,0)).unsqueeze(-1).permute(2,0,1)/255
+    depth_im = torch.Tensor(cv2.resize(cv2.imread(dir+'/depth'+filename,0), (256, 256), interpolation= cv2.INTER_CUBIC)).unsqueeze(-1).permute(2,0,1)/255
 
     label = 0 if 'fake' in dir+filename else 1
 
