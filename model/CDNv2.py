@@ -32,21 +32,23 @@ class Conv2d_X(nn.Module):
 
     def forward(self, x):
         
-        out_normal = F.conv2d(input=x, weight=self.conv_weights_reashaped, bias=self.conv.bias, stride=self.conv.stride, padding=self.conv.padding, groups=self.conv.groups)
+        out_normal = F.conv2d(input=x, weight=self.conv_weights_reashaped, bias=self.conv.bias, stride=self.conv.stride, padding=self.conv.padding,dilation=self.conv.dilation, groups=self.conv.groups)
 
         if math.fabs(self.theta - 0.0) < 1e-8:
             return out_normal 
         else:
             #pdb.set_trace()
             [C_out,C_in, kernel_size,kernel_size] = self.conv_weights_reashaped.shape
-            neg_pad = kernel_size // 2 - 1
+            pad = self.conv.padding[0]
+            dilate = self.conv.dilation[0]
+            neg_pad = (kernel_size // 2)*(dilate) - pad  
 
             kernel_diff = self.conv.weight.sum(2).sum(2)
             kernel_diff = kernel_diff[:, :, None, None]
             if neg_pad < 1:
-                out_diff = F.conv2d(input=x, weight=kernel_diff, bias=self.conv.bias, stride=self.conv.stride, padding=0, groups=self.conv.groups)
+                out_diff = F.conv2d(input=x, weight=kernel_diff, bias=self.conv.bias, stride=self.conv.stride, padding=-neg_pad, groups=self.conv.groups)
             else:
-                out_diff = F.conv2d(input=x[:,:,neg_pad: -neg_pad,neg_pad: -neg_pad], weight=kernel_diff, bias=self.conv.bias, stride=self.conv.stride, padding=0, groups=self.conv.groups)
+                out_diff = F.conv2d(input=x[:,:,neg_pad: -neg_pad,neg_pad: -neg_pad], weight=kernel_diff, bias=self.conv.bias, stride=self.conv.stride, padding=0,dilation=1, groups=self.conv.groups)
 
 
             return out_normal - self.theta * out_diff
@@ -74,9 +76,9 @@ def GlobalPooling(x: torch.Tensor):
 
 class SEBlock(nn.Module):
     def __init__(self, in_channels, reduction_ratio = 16):
-        super(SEBlock, self).__init__()
+        super().__init__()
     
-        self.global_pooling = GlobalPooling
+        self.global_pooling = nn.AdaptiveAvgPool2d((1,1))
         self.se = nn.Sequential(
             nn.Conv2d(in_channels, in_channels // reduction_ratio, kernel_size= 1 , bias = False),
             nn.ReLU(inplace = True),
@@ -115,26 +117,47 @@ class SpatialAttention(nn.Module):
         
         return self.sigmoid(x)
 
-class SE_CDCN(nn.Module):
+class CDCNv2(nn.Module):
 
-    def __init__(self, basic_conv=Conv2d_X, theta=0.7, se=False):   
-        super(SE_CDCN, self).__init__()
+    def __init__(self, basic_conv=Conv2d_X, theta=0.7, se=False, **kwarg):   
+        super(CDCNv2, self).__init__()
         
+        if 'padding' in kwarg.keys():
+            padding = kwarg['padding']
+        else:
+            padding = 1
+        if 'stride' in kwarg.keys():
+            padding = kwarg['stride']
+        else:
+            stride = 1
+        if 'bias' in kwarg.keys():
+            bias = kwarg['bias']
+        else:
+            bias = False
+        if 'dilation' in kwarg.keys():
+            dilation = kwarg['dilation']
+        else:
+            dilation = 1
+        if 'groups' in kwarg.keys():
+            groups = kwarg['groups']
+        else:
+            groups = 1
+
         
         self.conv1 = nn.Sequential(
-            basic_conv(3, 64, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=1, padding=1, bias=False, theta= theta),
+            basic_conv(3, 64, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=stride, padding=padding, bias=bias, theta= theta, dialtion = dilation, groups = groups),
             nn.BatchNorm2d(64),
             nn.ReLU(),    
         )
         
         self.Block1 = nn.Sequential(
-            basic_conv(64, 128, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=1, padding=1, bias=False, theta= theta),
+            basic_conv(64, 128, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=stride, padding=padding, bias=bias, theta= theta, dialtion = dilation, groups = groups),
             nn.BatchNorm2d(128),
             nn.ReLU(),   
-            basic_conv(128, 196, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=1, padding=1, bias=False, theta= theta),
+            basic_conv(128, 196, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=stride, padding=padding, bias=bias, theta= theta, dialtion = dilation, groups = groups),
             nn.BatchNorm2d(196),
             nn.ReLU(),  
-            basic_conv(196, 128, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=1, padding=1, bias=False, theta= theta),
+            basic_conv(196, 128, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=stride, padding=padding, bias=bias, theta= theta, dialtion = dilation, groups = groups),
             nn.BatchNorm2d(128),
             SEBlock(128) if se else Identity(),
             nn.ReLU(),   
@@ -143,13 +166,13 @@ class SE_CDCN(nn.Module):
         )
         
         self.Block2 = nn.Sequential(
-            basic_conv(128, 128, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=1, padding=1, bias=False, theta= theta),
+            basic_conv(128, 128, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=stride, padding=padding, bias=bias, theta= theta, dialtion = dilation, groups = groups),
             nn.BatchNorm2d(128),
             nn.ReLU(),   
-            basic_conv(128, 196, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=1, padding=1, bias=False, theta= theta),
+            basic_conv(128, 196, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=stride, padding=padding, bias=bias, theta= theta, dialtion = dilation, groups = groups),
             nn.BatchNorm2d(196),
             nn.ReLU(),  
-            basic_conv(196, 128, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=1, padding=1, bias=False, theta= theta),
+            basic_conv(196, 128, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=stride, padding=padding, bias=bias, theta= theta, dialtion = dilation, groups = groups),
             nn.BatchNorm2d(128),
             SEBlock(128) if se else Identity(),
             nn.ReLU(),  
@@ -157,13 +180,13 @@ class SE_CDCN(nn.Module):
         )
         
         self.Block3 = nn.Sequential(
-            basic_conv(128, 128, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=1, padding=1, bias=False, theta= theta),
+            basic_conv(128, 128, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=stride, padding=padding, bias=bias, theta= theta, dialtion = dilation, groups = groups),
             nn.BatchNorm2d(128),
             nn.ReLU(),   
-            basic_conv(128, 196, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=1, padding=1, bias=False, theta= theta),
+            basic_conv(128, 196, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=stride, padding=padding, bias=bias, theta= theta, dialtion = dilation, groups = groups),
             nn.BatchNorm2d(196),
             nn.ReLU(),  
-            basic_conv(196, 128, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=1, padding=1, bias=False, theta= theta),
+            basic_conv(196, 128, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=stride, padding=padding, bias=bias, theta= theta, dialtion = dilation, groups = groups),
             nn.BatchNorm2d(128),
             SEBlock(128) if se else Identity(),
             nn.ReLU(),   
@@ -171,19 +194,19 @@ class SE_CDCN(nn.Module):
         )
         
         self.lastconv1 = nn.Sequential(
-            basic_conv(128*3, 128, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=1, padding=1, bias=False, theta= theta),
+            basic_conv(128*3, 128, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=stride, padding=padding, bias=bias, theta= theta, dialtion = dilation, groups = groups),
             nn.BatchNorm2d(128),
             nn.ReLU(),    
         )
         
         self.lastconv2 = nn.Sequential(
-            basic_conv(128, 64, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=1, padding=1, bias=False, theta= theta),
+            basic_conv(128, 64, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=stride, padding=padding, bias=bias, theta= theta, dialtion = dilation, groups = groups),
             nn.BatchNorm2d(64),
             nn.ReLU(),    
         )
         
         self.lastconv3 = nn.Sequential(
-            basic_conv(64, 1, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=1, padding=1, bias=False, theta= theta),
+            basic_conv(64, 1, kernel_size=3, kernel_pos= [1,1,1,1,1,1,1,1,1], stride=stride, padding=padding, bias=bias, theta= theta, dialtion = dilation, groups = groups),
             nn.ReLU(),    
         )
         
