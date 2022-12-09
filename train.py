@@ -32,6 +32,7 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_in', required= False, help= 'Pass the previous checkpoint to the model for transfer learning.')
     parser.add_argument('--checkpoint_out', required= False, help= 'Save the trained model .')
     parser.add_argument('--neptune', required= False, help= 'Use neptune-ai.')
+    parser.add_argument('--mode', default= 'all',help= "Specify which part of the model that need to be train.")
     # parser.add_argument()
     args = parser.parse_args()
 
@@ -127,7 +128,7 @@ if __name__ == '__main__':
     
 
 
-    train_model = pl_train(model = model(),runs = run,ckpt_out= args.checkpoint_out, lr = args.lr, wd = args.wd, train= 'depth').to(device)
+    train_model = pl_train(model = model(),runs = run,ckpt_out= args.checkpoint_out, lr = args.lr, wd = args.wd, train= args.mode).to(device)
     train_model.cls.load_state_dict(torch.load('checkpoints/checkpoint_cls.pth'))
     trainer = pl.Trainer(devices=1, accelerator="gpu",accumulate_grad_batches=1, max_epochs = args.max_epochs)
     if args.val_data is not None:
