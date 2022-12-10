@@ -1,11 +1,11 @@
 import torch
-import numpy as np
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from model.utils import CFASDDataset, CSDataset, ZaloDataset, CFASD_ZaloDataset, NUAADataset, StandardDataset
 from torchvision import transforms
-from train_model import pl_train
+from train_model import pl_trainv2
 from model.C_CDN import C_CDN, DC_CDN
 from model.CDCN import CDCN
+from model.Finetune import Finetune_modelv2
 import pytorch_lightning as pl
 from argparse import ArgumentParser
 import neptune.new as neptune
@@ -36,12 +36,26 @@ if __name__ == '__main__':
     # parser.add_argument()
     args = parser.parse_args()
 
+    ####################################################################
+    ########## Handle device, checkpoint_in and model ##################
     device = args.device if torch.cuda.is_available() else 'cpu'
     try: 
         model = args.model
         model()
     except:
         model = map_input_to_model[args.model]
+
+    if args.checkpoint_in is not None:
+        ckpt_in = args.checkpoint_in
+    else:
+        ckpt_in = None
+
+    ft_model = Finetune_modelv2(depth_model= model(),weights= ckpt_in)
+
+
+
+    #################################################################
+    ######### Handle training and validation data ###################
     sampler = None
     shuffle = True
     run = None
@@ -112,7 +126,8 @@ if __name__ == '__main__':
         
         val_loader = DataLoader(test_dataset, sampler= val_sampler, batch_size= args.val_batch_size, shuffle= False)
 
-    
+    ###################################################
+    ######### Handle Neptune.ai run ###################
     if args.neptune is not None:
         if args.neptune == 'new':
             run = neptune.init_run(project="minhnguyen/FAS",
@@ -128,8 +143,8 @@ if __name__ == '__main__':
     
 
 
-    train_model = pl_train(model = model(),runs = run,ckpt_out= args.checkpoint_out, lr = args.lr, wd = args.wd, train= args.mode).to(device)
-    train_model.cls.load_state_dict(torch.load('checkpoints/checkpoint_cls.pth'))
+    train_model = pl_trainv2(model = ft_model,runs = run,ckpt_out= args.checkpoint_out, lr = args.lr, wd = args.wd, train= args.mode).to(device)
+    # train_model.cls.load_state_dict(torch.load('checkpoints/checkpoint_cls.pth'))
     trainer = pl.Trainer(devices=1, accelerator="gpu",accumulate_grad_batches=1, max_epochs = args.max_epochs)
     if args.val_data is not None:
         trainer.fit(train_model, train_loader, val_loader)
