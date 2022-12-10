@@ -8,6 +8,7 @@ from model.CDCN import CDCN
 from model.Finetune import Finetune_modelv2
 import torchmetrics
 import pytorch_lightning as pl
+import pickle
 
 
 
@@ -113,7 +114,7 @@ class pl_train(pl.LightningModule):
             self.run['val/epoch_f1'].upload(f1)
         
 class pl_trainv2(pl.LightningModule):
-    def __init__(self, model : Finetune_modelv2, runs = None, ckpt_out = None, train ="all", **kwarg):
+    def __init__(self, model : Finetune_modelv2, runs = None, ckpt_out: str = None, train ="all", **kwarg):
         super().__init__()
         assert train in ['all','depth','classifier','none'], "Training mode not supported, please select in the list ['all','depth','classifier','none']"
         if 'lr' in kwarg.keys():
@@ -133,6 +134,7 @@ class pl_trainv2(pl.LightningModule):
         self.BCE_loss = nn.BCELoss().to(self.device)
         self.run = runs
         self.ckpt = ckpt_out
+        self.pkl = self.ckpt.strip('checkpoints/')
 
         self.sigmoid = torch.sigmoid
         self.cls_train = 1
@@ -158,7 +160,6 @@ class pl_trainv2(pl.LightningModule):
 
 
     def forward(self, x):
-        
         map_x,score_x, *feat = self.model(x)
         return map_x, score_x, feat
     
@@ -168,14 +169,15 @@ class pl_trainv2(pl.LightningModule):
         loss = self.depth_train*(self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) ) + self.cls_train*self.BCE_loss(score_x, spoof_label)
 
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        self.log("train_acc", self.accuracy(score_x, spoof_label), on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log("train_acc", self.accuracy(score_x, spoof_label), on_step=False, on_epoch=True, prog_bar=True, logger=True)
         if self.run is not None:
             self.run["train/loss"].log(loss)
         return {'loss': loss, 'pred': score_x, 'target': spoof_label}
         
     def training_epoch_end(self, training_step_outputs):
+        pickle.dump(self.model,f'pickle/{self.pkl}')
         if self.run is not None:
-            acc = torchmetrics.Accuracy()(training_step_outputs['pred'],training_step_outputs['target'])
+            acc = self.accuracy(training_step_outputs['pred'],training_step_outputs['target'])
             loss = torch.mean(training_step_outputs['loss'])
             self.run['train/epoch_acc'].upload(acc)
             self.run['train/epoch_loss'].upload(loss)
@@ -193,7 +195,7 @@ class pl_trainv2(pl.LightningModule):
         loss = self.depth_train*(self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) ) + self.cls_train*self.BCE_loss(score_x, spoof_label)
 
         self.log("val_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        self.log("val_acc", self.accuracy(score_x, spoof_label), on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log("val_acc", self.accuracy(score_x, spoof_label), on_step=False, on_epoch=True, prog_bar=True, logger=True)
         if self.run is not None:
             self.run["val/loss"].log(loss)
         
