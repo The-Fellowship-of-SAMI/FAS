@@ -259,6 +259,7 @@ class NUAADataset(Dataset):
       with open(f'./NUAAImfile.txt','r+') as f:
         lines = f.readlines()
         self.lines = [path.strip().split(" ") for path in lines]
+      os.remove(f'./NUAAImfile.txt')
     else:
       self.lines = None
 
@@ -309,6 +310,7 @@ class StandardDataset(Dataset):
       with open(f'./{self.root_dir.upper()}Imfile.txt','r+') as f:
         lines = f.readlines()
         self.lines = [path.strip().split(" ") for path in lines]
+      os.remove(f'./{self.root_dir.upper()}Imfile.txt')
     else:
       self.lines = None
 
