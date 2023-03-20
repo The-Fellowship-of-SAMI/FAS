@@ -3,6 +3,7 @@ import scipy.io as sio
 from skimage.io import imread, imsave
 import cv2
 import os
+import tqdm
 
 from depthgen.api import PRN
 import depthgen.utils.depth_image as DepthImage
@@ -30,7 +31,7 @@ for type in folders:
             lines = f.readlines()
             paths = [line. split(" ")[0] for line in lines]
 
-            for imfile in paths:
+            for imfile in tqdm(paths):
 
                 image = imread(in_folder+f'/{imfile}')
 
@@ -41,7 +42,7 @@ for type in folders:
                 if type == 'imposter':
                     # try:
                         # _, cropped_image = prn.process(image, None, None, image_shape)
-                        cv2.imwrite(out_folder+f'/color/fake_{imname}',image)
+                        cv2.imwrite(out_folder+f'/color/fake_{imname}',image[:,:,::-1])
                         cv2.imwrite(out_folder+f'/depth/fake_{imname}',np.zeros([256,256,3]))
                     # except:
                     #     os.remove(in_folder+f'/{imfile}')
@@ -58,7 +59,7 @@ for type in folders:
 
                         depth_scene_map = DepthImage.generate_depth_image(vertices, kpt, image.shape, isMedFilter=True)
 
-                        cv2.imwrite(out_folder+f'/color/real_{imname}',image)
+                        cv2.imwrite(out_folder+f'/color/real_{imname}',image[:,:,::-1])
                         cv2.imwrite(out_folder+f'/depth/real_{imname}',depth_scene_map)
                         print(out_folder+f'/color/real_{imname}')
 

@@ -1,17 +1,24 @@
 import torch
+import numpy as np
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from model.utils import CFASDDataset, CSDataset, ZaloDataset, CFASD_ZaloDataset, NUAADataset, StandardDataset
 from torchvision import transforms
 from train_model import pl_trainv2
 from model.C_CDN import C_CDN, DC_CDN
 from model.CDCN import CDCN
+from model.CDCNv2 import CDCNv2
 from model.Finetune import Finetune_modelv2
 import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint
 from argparse import ArgumentParser
 import neptune.new as neptune
 from tqdm import tqdm
 
-transform = transforms.Compose([ transforms.RandomRotation(.15), transforms.RandomHorizontalFlip()])
+transform = transforms.Compose([ transforms.RandomRotation(.3), transforms.RandomHorizontalFlip()])
+# trans.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1)
+map_data_to_dataset ={'sample': CSDataset, 'train_img': CFASDDataset, 'test_img': CFASDDataset, 'zalo_data': ZaloDataset, 'NUAA': NUAADataset}
+map_input_to_model = {'C_CDN': C_CDN, 'DC_CDN': DC_CDN, 'CDCN': CDCN, 'CDCNv2': CDCNv2}
+map_equalize_to_bool = {'true': True, 't': True, 'yes': True, 'y': True}
 # trans.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1)
 map_data_to_dataset ={'sample': CSDataset, 'train_img': CFASDDataset, 'test_img': CFASDDataset, 'zalo_data': ZaloDataset, 'NUAA': NUAADataset}
 map_input_to_model = {'C_CDN': C_CDN, 'DC_CDN': DC_CDN, 'CDCN': CDCN}
@@ -39,18 +46,21 @@ if __name__ == '__main__':
     ####################################################################
     ########## Handle device, checkpoint_in and model ##################
     device = args.device if torch.cuda.is_available() else 'cpu'
+    
+    accel = 'cpu' if device =='cpu' else 'gpu'
     try: 
         model = args.model
         model()
     except:
-        model = map_input_to_model[args.model]
+        # model = map_input_to_model[args.model]
+        model = CDCNv2
 
     if args.checkpoint_in is not None:
         ckpt_in = args.checkpoint_in
     else:
         ckpt_in = None
 
-    ft_model = Finetune_modelv2(depth_model= model(),weights= ckpt_in)
+    ft_model = Finetune_modelv2(depth_model= model(device= device),weights= ckpt_in,device= device)
 
 
 
@@ -90,11 +100,15 @@ if __name__ == '__main__':
         n_class = {}
         cls_weight = {}
         ds_weight = []
-        for i in tqdm(range(len(train_dataset))):
-            if str(train_dataset[i][2]) in n_class.keys():
-                n_class[str(train_dataset[i][2])] += 1
-            else:
-                n_class[str(train_dataset[i][2])] = 0
+        try:
+            occurences = np.bincount(train_dataset[:][2])
+            n_class = {str(i): occurences[i] for i in range(len(occurences)) if occurences[i] != 0 }
+        except:
+            for i in tqdm(range(len(train_dataset))):
+                if str(train_dataset[i][2]) in n_class.keys():
+                    n_class[str(train_dataset[i][2])] += 1
+                else:
+                    n_class[str(train_dataset[i][2])] = 0
         for i in n_class:
             cls_weight[i] = 1/(n_class[i]+1)
         print("Weighting the samples...")
@@ -113,11 +127,15 @@ if __name__ == '__main__':
             n_class = {}
             cls_weight = {}
             ds_weight = []
-            for i in tqdm(range(len(test_dataset))):
-                if str(test_dataset[i][2]) in n_class.keys():
-                    n_class[str(test_dataset[i][2])] += 1
-                else:
-                    n_class[str(test_dataset[i][2])] = 0
+            try:
+                occurences = np.bincount(test_dataset[:][2])
+                n_class = {str(i): occurences[i] for i in range(len(occurences)) if occurences[i] != 0 }
+            except:
+                for i in tqdm(range(len(test_dataset))):
+                    if str(test_dataset[i][2]) in n_class.keys():
+                        n_class[str(test_dataset[i][2])] += 1
+                    else:
+                        n_class[str(test_dataset[i][2])] = 0
             for i in n_class:
                 cls_weight[i] = 1/(n_class[i]+1)
             print("Weighting the samples...")
@@ -141,11 +159,12 @@ if __name__ == '__main__':
                 print(e)
                 exit()
     
-
-
+    # if args.checkpoint_out is not None:
+    #     checkpoint_callback = ModelCheckpoint(dirpath=args.checkpoint_out)
     train_model = pl_trainv2(model = ft_model,runs = run,ckpt_out= args.checkpoint_out, lr = args.lr, wd = args.wd, train= args.mode).to(device)
+    train_model.update()
     # train_model.cls.load_state_dict(torch.load('checkpoints/checkpoint_cls.pth'))
-    trainer = pl.Trainer(devices=1, accelerator="gpu",accumulate_grad_batches=1, max_epochs = args.max_epochs)
+    trainer = pl.Trainer(devices=1, accelerator=accel,accumulate_grad_batches=4, max_epochs = args.max_epochs)
     if args.val_data is not None:
         trainer.fit(train_model, train_loader, val_loader)
     else:

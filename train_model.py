@@ -2,6 +2,7 @@ import numpy as np
 import torch 
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 from model.utils import Contrast_depth_loss
 from model.C_CDN import C_CDN, DC_CDN
 from model.CDCN import CDCN
@@ -30,11 +31,11 @@ class pl_train(pl.LightningModule):
         self.net = model.to(self.device)
         self.cls = nn.Sequential(nn.AvgPool2d(kernel_size=2, stride=2, padding=0),
                                 nn.Flatten(1),
-                                nn.Linear(16*16,1),
-                                nn.Sigmoid()).to(self.device)
+                                nn.Linear(16*16,2),
+                                nn.Softmax()).to(self.device)
         self.MSE_loss = nn.MSELoss().to(self.device)
-        self.contrastive_loss =  Contrast_depth_loss().to(self.device)
-        self.BCE_loss = nn.BCELoss().to(self.device)
+        self.contrastive_loss =  Contrast_depth_loss(self.device)
+        self.CE_loss = nn.CrossEntropyLoss().to(self.device)
         self.run = runs
         self.ckpt = ckpt_out
 
@@ -56,8 +57,8 @@ class pl_train(pl.LightningModule):
             for param in self.parameters():
                 param.requires_grad = False
         
-        self.accuracy = torchmetrics.Accuracy(threshold= .7, task= 'binary')
-        self.f1 = torchmetrics.F1Score(num_classes= 2, threshold= .7)
+        self.accuracy = torchmetrics.Accuracy(threshold= .5, task= 'binary')
+        self.f1 = torchmetrics.F1Score(num_classes= 2, threshold= .5, task= 'binary')
         
 
 
@@ -68,22 +69,28 @@ class pl_train(pl.LightningModule):
         return map_x, score_x, feat
     
     def training_step(self, batch, batch_idx):
-        inputs, map_label, spoof_label = batch[0].float().to(self.device), batch[1].float().to(self.device), batch[2].float().view(-1,1).to(self.device)
+        inputs, map_label, spoof_label = batch[0].float().to(self.device), batch[1].float().to(self.device), batch[2].float().to(self.device)
+        spoof_label = F.one_hot(spoof_label.to(torch.int64),2).float()
         map_x, score_x, *_ =  self(inputs)
-        loss = self.depth_train*(self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) ) + self.cls_train*self.BCE_loss(score_x, spoof_label)
+        loss = self.depth_train*(self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) ) + self.cls_train*self.CE_loss(score_x, spoof_label)
 
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        self.log("train_acc", self.accuracy(score_x, spoof_label), on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        # self.log("train_acc", self.accuracy(score_x, spoof_label), on_step=True, on_epoch=True, prog_bar=True, logger=True)
         if self.run is not None:
             self.run["train/loss"].log(loss)
         return {'loss': loss, 'pred': score_x, 'target': spoof_label}
         
     def training_epoch_end(self, training_step_outputs):
+        
+        pred = torch.cat([x['pred'] for x in training_step_outputs],dim= 0)
+        target = torch.cat([x['target'] for x in training_step_outputs],dim= 0)
+        acc = self.accuracy(pred,target)
+        loss = torch.mean(torch.Tensor([x['loss'] for x in training_step_outputs]))
+        self.log("train_epoch_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log('train_acc', acc, on_epoch=True, prog_bar=True, logger=True)
         if self.run is not None:
-            acc = torchmetrics.Accuracy()(training_step_outputs['pred'],training_step_outputs['target'])
-            loss = torch.mean(training_step_outputs['loss'])
-            self.run['train/epoch_acc'].upload(acc)
-            self.run['train/epoch_loss'].upload(loss)
+            self.run['train/epoch_acc'].log(acc)
+            self.run['train/epoch_loss'].log(loss)
         if self.ckpt is not None:
             torch.save(self.net.state_dict(), self.ckpt)
             if self.run is not None:
@@ -93,9 +100,10 @@ class pl_train(pl.LightningModule):
         return optim.Adam(self.parameters(), lr= self.lr, weight_decay = self.wd)
     
     def validation_step(self, batch, batch_idx):
-        inputs, map_label, spoof_label = batch[0].float().to(self.device), batch[1].float().to(self.device), batch[2].float().view(-1,1).to(self.device)
+        inputs, map_label, spoof_label = batch[0].float().to(self.device), batch[1].float().to(self.device), batch[2].float().to(self.device)
+        spoof_label = F.one_hot(spoof_label.to(torch.int64),2).float()
         map_x, score_x, *_ =  self(inputs)
-        loss = self.depth_train*(self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) ) + self.cls_train*self.BCE_loss(score_x, spoof_label)
+        loss = self.depth_train*(self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) ) + self.cls_train*self.CE_loss(score_x, spoof_label)
 
         self.log("val_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         self.log("val_acc", self.accuracy(score_x, spoof_label), on_step=True, on_epoch=True, prog_bar=True, logger=True)
@@ -105,13 +113,17 @@ class pl_train(pl.LightningModule):
         return {'loss': loss, 'pred': score_x, 'target': spoof_label}
         
     def validation_epoch_end(self, outputs) -> None:
+        # print(outputs[0]['pred'])
         if self.run is not None:
-            acc = self.accuracy(outputs['pred'],outputs['target'])
-            f1 = self.f1(outputs['pred'],outputs['target'])
-            loss = torch.mean(outputs['loss'])
-            self.run['val/epoch_acc'].upload(acc)
-            self.run['val/epoch_loss'].upload(loss)
-            self.run['val/epoch_f1'].upload(f1)
+            # print([x['pred'] for x in outputs])
+            pred = torch.cat([x['pred'] for x in outputs],dim= 0)
+            target = torch.cat([x['target'] for x in outputs],dim= 0)
+            acc = self.accuracy(pred,target)
+            f1 = self.f1(pred,target)
+            loss = torch.mean(torch.Tensor([x['loss'] for x in outputs]))
+            self.run['val/epoch_acc'].log(acc)
+            self.run['val/epoch_loss'].log(loss)
+            self.run['val/epoch_f1'].log(f1)
         
 class pl_trainv2(pl.LightningModule):
     def __init__(self, model : Finetune_modelv2, runs = None, ckpt_out: str = None, train ="all", **kwarg):
@@ -127,11 +139,10 @@ class pl_trainv2(pl.LightningModule):
         else:
             self.wd = .00005
 
-        self.model = model.to(self.device)
-
-        self.MSE_loss = nn.MSELoss().to(self.device)
-        self.contrastive_loss =  Contrast_depth_loss().to(self.device)
-        self.BCE_loss = nn.BCELoss().to(self.device)
+        self.model = model#.to(self.device)
+        self.MSE_loss = nn.MSELoss()#.to(self.device)
+        self.contrastive_loss =  Contrast_depth_loss(self.device)
+        self.CE_loss = nn.CrossEntropyLoss()#.to(self.device)
         self.run = runs
         self.ckpt = ckpt_out
         self.pkl = self.ckpt.strip('checkpoints/')
@@ -155,18 +166,20 @@ class pl_trainv2(pl.LightningModule):
                 param.requires_grad = False
         
         self.accuracy = torchmetrics.Accuracy(threshold= .7, task= 'binary')
-        self.f1 = torchmetrics.F1Score(num_classes= 2, threshold= .7)
+        self.f1 = torchmetrics.F1Score(num_classes= 2, threshold= .7, task= 'binary')
         
-
+    def update(self):
+        self.contrastive_loss = Contrast_depth_loss(self.device)
 
     def forward(self, x):
         map_x,score_x, *feat = self.model(x)
         return map_x, score_x, feat
     
     def training_step(self, batch, batch_idx):
-        inputs, map_label, spoof_label = batch[0].float().to(self.device), batch[1].float().to(self.device), batch[2].float().view(-1,1).to(self.device)
+        inputs, map_label, spoof_label = batch[0].float().to(self.device), batch[1].float().to(self.device), batch[2].float().to(self.device)
+        spoof_label = F.one_hot(spoof_label.to(torch.int64),2).float()
         map_x, score_x, *_ =  self(inputs)
-        loss = self.depth_train*(self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) ) + self.cls_train*self.BCE_loss(score_x, spoof_label)
+        loss = 50*self.depth_train*(self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) ) + self.cls_train*self.CE_loss(score_x, spoof_label)
 
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         self.log("train_acc", self.accuracy(score_x, spoof_label), on_step=False, on_epoch=True, prog_bar=True, logger=True)
@@ -177,10 +190,12 @@ class pl_trainv2(pl.LightningModule):
     def training_epoch_end(self, training_step_outputs):
         pickle.dump(self.model,f'pickle/{self.pkl}')
         if self.run is not None:
-            acc = self.accuracy(training_step_outputs['pred'],training_step_outputs['target'])
-            loss = torch.mean(training_step_outputs['loss'])
-            self.run['train/epoch_acc'].upload(acc)
-            self.run['train/epoch_loss'].upload(loss)
+            pred = torch.cat([x['pred'] for x in training_step_outputs],dim= 0)
+            target = torch.cat([x['target'] for x in training_step_outputs],dim= 0)
+            acc = self.accuracy(pred,target)
+            loss = torch.mean(torch.Tensor([x['loss'] for x in training_step_outputs]))
+            self.run['train/epoch_acc'].log(acc)
+            self.run['train/epoch_loss'].log(loss)
         if self.ckpt is not None:
             torch.save(self.model.state_dict(), self.ckpt)
             if self.run is not None:
@@ -190,9 +205,10 @@ class pl_trainv2(pl.LightningModule):
         return optim.Adam(self.model.parameters(), lr= self.lr, weight_decay = self.wd)
     
     def validation_step(self, batch, batch_idx):
-        inputs, map_label, spoof_label = batch[0].float().to(self.device), batch[1].float().to(self.device), batch[2].float().view(-1,1).to(self.device)
+        inputs, map_label, spoof_label = batch[0].float().to(self.device), batch[1].float().to(self.device), batch[2].float().to(self.device)
+        spoof_label = F.one_hot(spoof_label.to(torch.int64),2).float()
         map_x, score_x, *_ =  self(inputs)
-        loss = self.depth_train*(self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) ) + self.cls_train*self.BCE_loss(score_x, spoof_label)
+        loss = self.depth_train*(self.MSE_loss(map_label,map_x) + self.contrastive_loss(map_label,map_x) ) + self.cls_train*self.CE_loss(score_x, spoof_label)
 
         self.log("val_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         self.log("val_acc", self.accuracy(score_x, spoof_label), on_step=False, on_epoch=True, prog_bar=True, logger=True)
@@ -203,12 +219,14 @@ class pl_trainv2(pl.LightningModule):
         
     def validation_epoch_end(self, outputs) -> None:
         if self.run is not None:
-            acc = self.accuracy(outputs['pred'],outputs['target'])
-            f1 = self.f1(outputs['pred'],outputs['target'])
-            loss = torch.mean(outputs['loss'])
-            self.run['val/epoch_acc'].upload(acc)
-            self.run['val/epoch_loss'].upload(loss)
-            self.run['val/epoch_f1'].upload(f1)
+            pred = torch.cat([x['pred'] for x in outputs],dim= 0)
+            target = torch.cat([x['target'] for x in outputs],dim= 0)
+            acc = self.accuracy(pred,target)
+            f1 = self.f1(pred,target)
+            loss = torch.mean(torch.Tensor([x['loss'] for x in outputs]))
+            self.run['val/epoch_acc'].log(acc)
+            self.run['val/epoch_loss'].log(loss)
+            self.run['val/epoch_f1'].log(f1)
 
 
 

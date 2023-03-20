@@ -91,7 +91,7 @@ class PRN:
             old_size = (right - left + bottom - top)/2
             center = np.array([right - (right - left) / 2.0, bottom - (bottom - top) / 2.0])
             size = int(old_size*1.6)
-            print(left, right, top, bottom)
+            # print(left, right, top, bottom)
         elif FaceRect_name_full is not None:
             fid = open(FaceRect_name_full, 'r')
             lines = fid.readlines()
@@ -110,7 +110,7 @@ class PRN:
             bottom = int(256.0 * bottom / image_shape[1])
             '''
 
-            print(left, right, top, bottom)
+            # print(left, right, top, bottom)
             old_size = (right - left + bottom - top)/2
             center = np.array([right - (right - left) / 2.0, bottom - (bottom - top) / 2.0 + old_size*0.14])
             size = int(old_size*1.58)            
@@ -127,7 +127,7 @@ class PRN:
             center = np.array([right - (right - left) / 2.0, bottom - (bottom - top) / 2.0 - old_size*0.1])
 
             size = int(old_size*1.58)
-            print(left, right, top, bottom)
+            # print(left, right, top, bottom)
 
         # crop image
         src_pts = np.array([[center[0]-size/2, center[1]-size/2], [center[0] - size/2, center[1]+size/2], [center[0]+size/2, center[1]-size/2]])

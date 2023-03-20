@@ -1,0 +1,2 @@
+run:
+	 python trainv2.py --model CDCNv2 --mode "depth" --train_data "data/processed/NUAA/train" --val_data "data/processed/NUAA/test" --max_epochs 100 --checkpoint_out "checkpoints/checkpoint_cdnv2_nuaa.pth" --equalize_data False --batch_size 2 --val_batch_size 4 

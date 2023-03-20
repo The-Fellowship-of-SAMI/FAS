@@ -16,18 +16,23 @@ if __name__ == '__main__':
     parser.add_argument('--check_rate', default= 1., help= 'Deicde how many second(s) will be between each check turn.')
     parser.add_argument('-m', '--max_faces',default= -1, help= 'Decide the maximum of face will be detect for each image/frame.')
     parser.add_argument('-w', '--max_workers',default= 2, help= 'Decide the maximum number of parallel process(es) will be used. ')
+    parser.add_argument('--theta', default= .7, type= float, help= 'Decide the trade-off between vanilla convolution and central difference convolution.')
     # parser.add_argument()
     args = parser.parse_args()
     # model = map_input_to_model[args.model]
-    model = args.model
+    try: 
+        model = args.model
+        model()
+    except:
+        model = map_input_to_model[args.model]
     if args.image is not None:
-        image(args.image, maxFaceDetected= args.max_faces, maxWorkers= args.max_workers, model = model(),modelDepthWeight= args.model_weights)
+        image(args.image, maxFaceDetected= args.max_faces, maxWorkers= args.max_workers, model = model(theta= args.theta),modelDepthWeight= args.model_weights)
         
     elif args.video is not None:
         try:
-            video(args.video,fpsLimit= args.fps,faceCheckRate= args.check_rate, maxFaceDetected= args.max_faces, maxWorkers= args.max_workers, model = model(),modelDepthWeight= args.model_weights)
+            video(args.video,fpsLimit= args.fps,faceCheckRate= args.check_rate, maxFaceDetected= args.max_faces, maxWorkers= args.max_workers, model = model(theta= args.theta),modelDepthWeight= args.model_weights)
         except Exception as e:
             print(e)
             exit()
     else:
-        live(fpsLimit= args.fps,faceCheckRate= args.check_rate,maxFaceDetected= args.max_faces, maxWorkers= args.max_workers, model = model(),modelDepthWeight= args.model_weights)
+        live(fpsLimit= args.fps,faceCheckRate= args.check_rate,maxFaceDetected= args.max_faces, maxWorkers= args.max_workers, model = model(theta= args.theta),modelDepthWeight= args.model_weights)

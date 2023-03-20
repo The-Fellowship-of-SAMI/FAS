@@ -76,11 +76,16 @@ if __name__ == '__main__':
         n_class = {}
         cls_weight = {}
         ds_weight = []
-        for i in tqdm(range(len(train_dataset))):
-            if str(train_dataset[i][2]) in n_class.keys():
-                n_class[str(train_dataset[i][2])] += 1
-            else:
-                n_class[str(train_dataset[i][2])] = 0
+        try:
+            occurences = np.bincount(train_dataset[:][2])
+            n_class = {str(i): occurences[i] for i in range(len(occurences)) if occurences[i] != 0 }
+        except Exception as e:
+            print(">> Exception:",e)
+            for i in tqdm(range(len(train_dataset))):
+                if str(train_dataset[i][2]) in n_class.keys():
+                    n_class[str(train_dataset[i][2])] += 1
+                else:
+                    n_class[str(train_dataset[i][2])] = 0
         for i in n_class:
             cls_weight[i] = 1/(n_class[i]+1)
         print("Weighting the samples...")
@@ -99,11 +104,15 @@ if __name__ == '__main__':
             n_class = {}
             cls_weight = {}
             ds_weight = []
-            for i in tqdm(range(len(test_dataset))):
-                if str(test_dataset[i][2]) in n_class.keys():
-                    n_class[str(test_dataset[i][2])] += 1
-                else:
-                    n_class[str(test_dataset[i][2])] = 0
+            try:
+                occurences = np.bincount(test_dataset[:][2])
+                n_class = {str(i): occurences[i] for i in range(len(occurences)) if occurences[i] != 0 }
+            except:
+                for i in tqdm(range(len(test_dataset))):
+                    if str(test_dataset[i][2]) in n_class.keys():
+                        n_class[str(test_dataset[i][2])] += 1
+                    else:
+                        n_class[str(test_dataset[i][2])] = 0
             for i in n_class:
                 cls_weight[i] = 1/(n_class[i]+1)
             print("Weighting the samples...")
